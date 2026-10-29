@@ -121,15 +121,45 @@
      two off the response, so leaving them out costs you next unit's
      diagnostics. -->
 
+<!-- Milestone 3 run: one signal only. guess, confidence, label and
+     style_score are placeholders until Milestones 4 and 5. Replace this with
+     a full run once they land. -->
+
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text": "I started running last spring because my doctor said I should. The first week was hard and I could only go about a mile. Now I run three times a week, usually in the morning before work. It helps me sleep better and I feel less stressed.", "creator_id": "qiuyan"}'
 ```
 
 ```json
-
+{
+  "confidence": null,
+  "content_id": "377fd4c8-de87-4881-b0a6-4677b34abd76",
+  "creator_id": "qiuyan",
+  "guess": "pending",
+  "label": "PLACEHOLDER — label comes in Milestone 5.",
+  "model_score": 0.8066,
+  "status": "decided",
+  "style_score": null
+}
 ```
+
+**A refused submission** (empty text)
+
+```bash
+$ curl -X POST http://127.0.0.1:5000/submit \
+  -H "Content-Type: application/json" \
+  -d '{"text": "", "creator_id": "qiuyan"}'
+```
+
+```json
+{
+  "error": "text_too_short",
+  "message": "Text needs at least 20 words to be scored."
+}
+```
+
+HTTP 400.
 
 **An appeal**
 
@@ -145,12 +175,36 @@ $ curl -X POST http://127.0.0.1:5000/appeal \
 
 **What the log shows afterwards**
 
+<!-- Milestone 3 run: the two entries above, before /appeal exists. -->
+
 ```bash
-$ curl "http://127.0.0.1:5000/log?limit=3"
+$ curl "http://127.0.0.1:5000/log?limit=2"
 ```
 
 ```json
-
+{
+  "count": 2,
+  "entries": [
+    {
+      "combined_score": null,
+      "content_id": "377fd4c8-de87-4881-b0a6-4677b34abd76",
+      "creator_id": "qiuyan",
+      "guess": "pending",
+      "label": "PLACEHOLDER — label comes in Milestone 5.",
+      "model_score": 0.8066,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-10-29T00:51:35+00:00"
+    },
+    {
+      "creator_id": "qiuyan",
+      "event": "rejected",
+      "reason": "text_too_short",
+      "status": "rejected",
+      "timestamp": "2026-10-29T00:51:35+00:00"
+    }
+  ]
+}
 ```
 
 ---

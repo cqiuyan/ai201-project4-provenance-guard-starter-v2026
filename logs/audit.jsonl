@@ -1,0 +1,6 @@
+{"timestamp": "2026-10-29T00:51:02+00:00", "creator_id": "qiuyan", "event": "rejected", "status": "rejected", "reason": "missing_field"}
+{"timestamp": "2026-10-29T00:51:17+00:00", "creator_id": "qiuyan", "event": "rejected", "status": "rejected", "reason": "missing_field"}
+{"timestamp": "2026-10-29T00:51:35+00:00", "content_id": "377fd4c8-de87-4881-b0a6-4677b34abd76", "creator_id": "qiuyan", "guess": "pending", "model_score": 0.8066, "style_score": null, "combined_score": null, "label": "PLACEHOLDER — label comes in Milestone 5.", "status": "decided"}
+{"timestamp": "2026-10-29T00:51:35+00:00", "creator_id": "qiuyan", "event": "rejected", "status": "rejected", "reason": "text_too_short"}
+{"timestamp": "2026-10-29T00:58:04+00:00", "content_id": "e4c75a13-9b57-49ae-abf1-dfe650d6ff92", "creator_id": "me", "guess": "pending", "model_score": 0.8066, "style_score": null, "combined_score": null, "label": "PLACEHOLDER — label comes in Milestone 5.", "status": "decided"}
+{"timestamp": "2026-10-29T00:58:18+00:00", "creator_id": "me", "event": "rejected", "status": "rejected", "reason": "text_too_short"}

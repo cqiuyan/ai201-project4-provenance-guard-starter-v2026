@@ -30,8 +30,14 @@ from flask import Flask, jsonify, request
 
 import audit
 import config
+import detector
 
 app = Flask(__name__)
+
+# The input limits from the endpoint contract. Fewer than 20 words is too
+# little for the model to be surprised by; 10,000 characters is plenty.
+MIN_TEXT_WORDS = 20
+MAX_TEXT_CHARS = 10_000
 
 
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
@@ -199,17 +205,65 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
 
-    # TODO: delete this and build the route.
+    # Refuse malformed input before any scoring, and leave a trace of it.
+    def refuse(status, error, message):
+        creator = payload.get("creator_id") if isinstance(payload, dict) else None
+        audit.log_rejection(
+            creator_id=creator if isinstance(creator, str) else "unknown",
+            reason=error,
+        )
+        return jsonify({"error": error, "message": message}), status
+
+    if not isinstance(payload, dict):
+        return refuse(400, "invalid_json", "Send a JSON object with text and creator_id.")
+
+    text = payload.get("text")
+    creator_id = payload.get("creator_id")
+    if not isinstance(text, str):
+        return refuse(400, "missing_field", "The text field is missing or isn't a string.")
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return refuse(400, "missing_field", "The creator_id field is missing or isn't a string.")
+
+    text = text.strip()
+    creator_id = creator_id.strip()[:64]
+    if len(text) > MAX_TEXT_CHARS:
+        return refuse(413, "text_too_long", f"Text can be at most {MAX_TEXT_CHARS:,} characters.")
+    if len(text.split()) < MIN_TEXT_WORDS:
+        return refuse(400, "text_too_short", f"Text needs at least {MIN_TEXT_WORDS} words to be scored.")
+
+    content_id = str(uuid.uuid4())
+
+    try:
+        model_score = detector.model_signal(text)
+    except detector.DetectorUnavailable:
+        return refuse(503, "detector_unavailable", "The detector model isn't loaded. Run python detector.py once.")
+
+    # Milestone 3: one signal. Guess, confidence and label are placeholders
+    # until the second signal and the scoring land in Milestones 4 and 5.
+    guess = "pending"
+    label = "PLACEHOLDER — label comes in Milestone 5."
+
+    audit.log_decision(
+        content_id=content_id,
+        creator_id=creator_id,
+        guess=guess,
+        model_score=model_score,
+        label=label,
+        status="decided",
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /submit isn't built yet — see the TODO in app.py.",
-        "you_sent": {
-            "text_length": len(payload.get("text", "")),
-            "creator_id": payload.get("creator_id"),
-        },
-    }), 501
+        "content_id": content_id,
+        "creator_id": creator_id,
+        "guess": guess,
+        "confidence": None,
+        "label": label,
+        "model_score": model_score,
+        "style_score": None,
+        "status": "decided",
+    })
 
 
 @app.post("/appeal")
