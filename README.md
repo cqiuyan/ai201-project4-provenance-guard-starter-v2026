@@ -72,9 +72,31 @@
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** average the two signals with equal weight. Then, if the
+signals disagree by more than 0.4, keep the result inside the "unsure" band,
+whatever the average says. Two methods that disagree that much is
+uncertainty, and the system should say so rather than pick a side.
+
+I weight the signals equally because neither one deserves more trust. Signal
+one accuses plain writers; signal two can be fooled by anyone who adds a few
+dashes or changes their sentence lengths. A confident label in either
+direction needs both signals pointing the same way.
 
 **The numbers:**
+
+- Weights: `WEIGHT_MODEL_SIGNAL = 0.5`, `WEIGHT_STYLE_SIGNAL = 0.5` (in `config.py`)
+- Disagreement gap: `DISAGREEMENT_GAP = 0.4` (in `config.py`). Above it, the
+  score is clamped to the range `HUMAN_THRESHOLD`–`AI_THRESHOLD`.
+- Inside signal two (`stylometry.py::style_signal`), the average of two
+  measures, each scaled to 0–1 where higher means more AI-like:
+  - sentence-length spread (stdev ÷ mean): 0.20 or less scores 1.0, 0.70 or
+    more scores 0.0, linear in between. One sentence scores 0.5 (no evidence).
+  - expressive punctuation per 100 words (`; : ! ? ( ) — " …`): none scores
+    0.75, 3 or more scores 0.0, linear in between. Having none is only weak
+    evidence, because plenty of people never use a semicolon.
+  - type-token ratio is computed and shown but has **zero weight**. On my test
+    texts it pointed the wrong way: the AI text had the *more* varied
+    vocabulary (0.92–0.95 against 0.83 for human).
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -83,6 +105,16 @@
 
 **A case where my two signals split, and what my rule does with it:**
 
+"Dad's truck died on the bridge again, right in the middle lane, hazards
+blinking like an apology. …": two long, vivid sentences.
+
+- Signal one: **0.22** (human). The words are specific and hard to predict.
+- Signal two: **0.75** (AI). Two sentences of similar length and no
+  expressive punctuation look even and tidy.
+- The gap is 0.54, which is over 0.4, so the rule keeps the score in the
+  unsure band (0.49). It doesn't call this human just because one signal says
+  so, and it can't call it AI. Signal two is the one that's wrong here: two
+  sentences are too few for "spread" to mean much.
 
 
 ---

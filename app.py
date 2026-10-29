@@ -31,6 +31,8 @@ from flask import Flask, jsonify, request
 import audit
 import config
 import detector
+import scoring
+import stylometry
 
 app = Flask(__name__)
 
@@ -240,8 +242,10 @@ def submit():
     except detector.DetectorUnavailable:
         return refuse(503, "detector_unavailable", "The detector model isn't loaded. Run python detector.py once.")
 
-    # Milestone 3: one signal. Guess, confidence and label are placeholders
-    # until the second signal and the scoring land in Milestones 4 and 5.
+    style_score = stylometry.style_signal(text)
+    combined_score = scoring.combine_signals(model_score, style_score)
+
+    # Guess and label are placeholders until Milestone 5.
     guess = "pending"
     label = "PLACEHOLDER — label comes in Milestone 5."
 
@@ -250,6 +254,8 @@ def submit():
         creator_id=creator_id,
         guess=guess,
         model_score=model_score,
+        style_score=style_score,
+        combined_score=combined_score,
         label=label,
         status="decided",
     )
@@ -258,10 +264,11 @@ def submit():
         "content_id": content_id,
         "creator_id": creator_id,
         "guess": guess,
-        "confidence": None,
+        # The combined score: 0 = confidently human, 1 = confidently AI.
+        "confidence": combined_score,
         "label": label,
         "model_score": model_score,
-        "style_score": None,
+        "style_score": style_score,
         "status": "decided",
     })
 
