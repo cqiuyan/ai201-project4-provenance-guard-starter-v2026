@@ -40,6 +40,7 @@ app = Flask(__name__)
 # little for the model to be surprised by; 10,000 characters is plenty.
 MIN_TEXT_WORDS = 20
 MAX_TEXT_CHARS = 10_000
+MAX_REASONING_CHARS = 2_000
 
 
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
@@ -245,9 +246,7 @@ def submit():
     style_score = stylometry.style_signal(text)
     combined_score = scoring.combine_signals(model_score, style_score)
 
-    # Guess and label are placeholders until Milestone 5.
-    guess = "pending"
-    label = "PLACEHOLDER — label comes in Milestone 5."
+    guess, label = scoring.score_to_label(combined_score)
 
     audit.log_decision(
         content_id=content_id,
@@ -293,14 +292,46 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
 
-    # TODO: delete this and build the route.
+    def refuse(status, error, message):
+        return jsonify({"error": error, "message": message}), status
+
+    if not isinstance(payload, dict):
+        return refuse(400, "invalid_json", "Send a JSON object with content_id and reasoning.")
+
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
+    if not isinstance(content_id, str) or not content_id.strip():
+        return refuse(400, "missing_field", "The content_id field is missing or empty.")
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return refuse(400, "missing_field", "The reasoning field is missing or empty.")
+
+    content_id = content_id.strip()
+    reasoning = reasoning.strip()
+    if len(reasoning) > MAX_REASONING_CHARS:
+        return refuse(400, "reasoning_too_long", f"Reasoning can be at most {MAX_REASONING_CHARS:,} characters.")
+
+    # The original decision, not an earlier appeal against it.
+    decisions = [e for e in audit.entries_for(content_id) if e.get("status") == "decided"]
+    if not decisions:
+        return refuse(404, "unknown_content_id",
+                      "No submission has that ID. Check it was copied exactly from your result.")
+    original = decisions[0]
+
+    audit.log_appeal(
+        content_id=content_id,
+        creator_id=original["creator_id"],
+        reasoning=reasoning,
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id,
+        "status": "under_review",
+        "original_guess": original.get("guess"),
+        "message": "Your appeal is recorded and a person will review this "
+                   "submission. The original result is not final.",
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────

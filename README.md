@@ -39,7 +39,40 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
+Provenance Guard takes a piece of writing and tells the writer whether it
+reads as human-written, AI-generated, or something it can't call. If they
+disagree with the result, they can appeal. A submission goes through seven
+steps:
 
+1. **The route checks the input:** `POST /submit` in `app.py`. It pulls out
+   `text` and `creator_id` and refuses anything malformed before any scoring
+   happens: a missing field, fewer than 20 words, more than 10,000 characters.
+   A refusal returns a 4xx with an `error` and a `message`, and is logged as
+   `rejected`.
+2. **The submission gets an id:** a `content_id` (a UUID). From here on the
+   submission has a name, which the log and `/appeal` both use.
+3. **Signal one reads the words:** `detector.model_signal`. A local gpt2
+   model measures how predictable the text is and turns that into
+   `model_score`, 0–1, where higher means more AI-like.
+4. **Signal two measures the shape:** `stylometry.style_signal`. It looks at
+   how much sentence lengths vary and how much expressive punctuation there
+   is, without reading a word, and produces `style_score`, 0–1, where higher
+   means more AI-like.
+5. **The combining rule makes one score:**
+   `scoring.combine_signals`. It averages the two signals with equal weight.
+   If they disagree by more than 0.4, the score is held in the unsure band.
+6. **The label turns the score into words:** `scoring.score_to_label`.
+   Below 0.35 is human, 0.35–0.75 is unsure, and above 0.75 is AI. Each
+   comes with a full sentence written for the writer, not a number.
+7. **The decision is logged, then returned:** `audit.log_decision`
+   writes the scores, guess, label and `status: "decided"` to
+   `logs/audit.jsonl`. The response goes back with the `content_id`, guess,
+   combined score, label and both signal scores. The label is what the
+   writer reads.
+
+If the writer thinks it's wrong, `POST /appeal` with their `content_id` and
+reasoning records an appeal next to the original decision and moves it to
+`under_review`, so a person can look at it.
 
 ---
 
@@ -53,19 +86,53 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** how predictable the text is to a language model. A
+local gpt2 model (`detector.py`) computes perplexity, its average surprise
+at each next word over the first 400 tokens. That number is squashed onto
+0–1 so that low surprise gives a high score. A perplexity of 45 scores 0.5.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** a language model
+writes by picking likely next words, so its output tends to be text another
+model finds easy to predict. People make odder choices: a specific word
+where a typical one would do, an abrupt turn, a detail nobody would guess.
 
-**What it can't see:**
+**What it can't see:** who wrote the text. Predictability is a property of
+the words, not the author, so anyone who writes in plain, common words and
+short sentences scores as machine-like. My plain human paragraph about
+running scored 0.81, next to AI boilerplate at 0.86. It fails the other way
+too: AI text that uses rare or ornate words scores as human, because rare
+words are exactly what gpt2 fails to predict. And it only reads the first
+~300 words.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** the shape of the text, without reading it
+(`stylometry.py`):
 
-**Why that might differ between human and AI writing:**
+- **Sentence-length spread:** stdev ÷ mean of words per sentence.
+- **Expressive punctuation:** marks per 100 words (`; : ! ? ( ) — " …`).
 
-**What it can't see:**
+The two are averaged. Type-token ratio is computed too but carries no
+weight, for the reason given in the combining rule below.
+
+**Why that might differ between human and AI writing:** "most likely next
+word", averaged over a whole text, produces even, mid-length sentences and
+tidy punctuation. Human writing is lumpier: a three-word sentence next to a
+forty-word one, a dash, a bracketed aside.
+
+**What it can't see:** what the text says. Anything that changes the shape
+without changing the substance moves it, and all of these are cheap to do
+on purpose:
+
+- chopping sentences up or gluing them together
+- dropping in a few dashes or semicolons
+- pasting in a quotation
+
+It also shares signal one's blind spot. A plain writer's even sentences and
+lack of semicolons read as AI here too, so it agrees with signal one on
+exactly the person who most needs it not to: my plain paragraph scored 0.88.
+On short texts it's noisy. Two sentences are too few for "spread" to mean
+much, which is the split case below.
 
 ### The combining rule
 
@@ -128,15 +195,37 @@ blinking like an apology. …": two long, vivid sentences.
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human | below 0.35 | This reads like it was written by a person. Neither of our checks found the patterns we usually see in AI-generated writing. |
+| unsure | 0.35 – 0.75 (both ends included) | We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID. |
+| high-confidence AI | above 0.75 | This has a lot in common with AI-generated writing: very predictable wording and evenly shaped sentences. Clear, plain writing by real people can look like this too, so this is not proof. If you wrote it yourself, you can appeal using your submission ID and a person will review it. |
+
+The thresholds are in `config.py`: `HUMAN_THRESHOLD = 0.35`,
+`AI_THRESHOLD = 0.75`. I raised the AI threshold from 0.65. My clearly-AI
+test text scored 0.71, so it now lands in "unsure". That's one missed
+detection, accepted so that human writing scoring 0.65–0.75 isn't accused.
+It doesn't save the plain writer: my plain human paragraph scores 0.84, next
+to real AI boilerplate at 0.85, and no threshold separates two scores that
+close. That case is why the AI label says "this is not proof" and points to
+the appeal.
 
 **Why I worded the "unsure" one this way:**
 <!-- It's the hardest of the three. It has to admit uncertainty without
      sounding like an accusation, because the person reading it may well have
      written every word themselves. -->
 
+The person reading "unsure" most often wrote every word themselves: formal
+writing, short pieces and plain writing all land here. So it does three
+things:
+
+- It says plainly that *we* can't tell. The uncertainty belongs to the
+  system, not to the writer.
+- It says outright "this is not a finding that you used AI", so nobody has
+  to read between the lines.
+- It offers the appeal as something they *can* do, not something they have
+  to do to clear their name.
+
+It also never mentions a number. "0.58" would mean nothing to the writer and
+would sound more precise than it is.
 
 
 ---
@@ -153,9 +242,9 @@ blinking like an apology. …": two long, vivid sentences.
      two off the response, so leaving them out costs you next unit's
      diagnostics. -->
 
-<!-- Milestone 3 run: one signal only. guess, confidence, label and
-     style_score are placeholders until Milestones 4 and 5. Replace this with
-     a full run once they land. -->
+The text is my plain human test paragraph. It gets the high-confidence AI
+label: the false positive I traced in Milestone 1, and the case the appeal is
+for.
 
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
@@ -165,16 +254,24 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 
 ```json
 {
-  "confidence": null,
-  "content_id": "377fd4c8-de87-4881-b0a6-4677b34abd76",
+  "confidence": 0.8408,
+  "content_id": "44dde83d-c0d1-4cd5-a116-c76102052288",
   "creator_id": "qiuyan",
-  "guess": "pending",
-  "label": "PLACEHOLDER — label comes in Milestone 5.",
+  "guess": "ai",
+  "label": "This has a lot in common with AI-generated writing: very predictable wording and evenly shaped sentences. Clear, plain writing by real people can look like this too, so this is not proof. If you wrote it yourself, you can appeal using your submission ID and a person will review it.",
   "model_score": 0.8066,
   "status": "decided",
-  "style_score": null
+  "style_score": 0.875
 }
 ```
+
+**The other two labels**, from the same run:
+
+| Input | `model_score` | `style_score` | `confidence` | `guess` |
+|---|---|---|---|---|
+| Casual human (flooded dishwasher) | 0.389 | 0.0503 | 0.2197 | `human` |
+| Formal human (Federalist No. 10 opening) | 0.449 | 0.7037 | 0.5764 | `unsure` |
+| AI boilerplate ("In today's fast-paced digital landscape…") | 0.8558 | 0.8515 | 0.8537 | `ai` |
 
 **A refused submission** (empty text)
 
@@ -198,16 +295,39 @@ HTTP 400.
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "...", "reasoning": "..."}'
+  -d '{"content_id": "44dde83d-c0d1-4cd5-a116-c76102052288", "reasoning": "I wrote this myself about my own running routine. I write in short, plain sentences on purpose."}'
 ```
 
 ```json
-
+{
+  "content_id": "44dde83d-c0d1-4cd5-a116-c76102052288",
+  "message": "Your appeal is recorded and a person will review this submission. The original result is not final.",
+  "original_guess": "ai",
+  "status": "under_review"
+}
 ```
+
+An appeal against an ID that doesn't exist is refused, not silently accepted:
+
+```bash
+$ curl -X POST http://127.0.0.1:5000/appeal \
+  -H "Content-Type: application/json" \
+  -d '{"content_id": "not-a-real-id", "reasoning": "test"}'
+```
+
+```json
+{
+  "error": "unknown_content_id",
+  "message": "No submission has that ID. Check it was copied exactly from your result."
+}
+```
+
+HTTP 404.
 
 **What the log shows afterwards**
 
-<!-- Milestone 3 run: the two entries above, before /appeal exists. -->
+The original decision is unchanged, and the appeal sits after it with
+`status: "under_review"`.
 
 ```bash
 $ curl "http://127.0.0.1:5000/log?limit=2"
@@ -218,22 +338,23 @@ $ curl "http://127.0.0.1:5000/log?limit=2"
   "count": 2,
   "entries": [
     {
-      "combined_score": null,
-      "content_id": "377fd4c8-de87-4881-b0a6-4677b34abd76",
+      "combined_score": 0.8408,
+      "content_id": "44dde83d-c0d1-4cd5-a116-c76102052288",
       "creator_id": "qiuyan",
-      "guess": "pending",
-      "label": "PLACEHOLDER — label comes in Milestone 5.",
+      "guess": "ai",
+      "label": "This has a lot in common with AI-generated writing: very predictable wording and evenly shaped sentences. Clear, plain writing by real people can look like this too, so this is not proof. If you wrote it yourself, you can appeal using your submission ID and a person will review it.",
       "model_score": 0.8066,
       "status": "decided",
-      "style_score": null,
-      "timestamp": "2026-10-29T00:51:35+00:00"
+      "style_score": 0.875,
+      "timestamp": "2026-10-29T01:33:39+00:00"
     },
     {
+      "content_id": "44dde83d-c0d1-4cd5-a116-c76102052288",
       "creator_id": "qiuyan",
-      "event": "rejected",
-      "reason": "text_too_short",
-      "status": "rejected",
-      "timestamp": "2026-10-29T00:51:35+00:00"
+      "event": "appeal",
+      "reasoning": "I wrote this myself about my own running routine. I write in short, plain sentences on purpose.",
+      "status": "under_review",
+      "timestamp": "2026-10-29T01:34:00+00:00"
     }
   ]
 }
@@ -243,17 +364,24 @@ $ curl "http://127.0.0.1:5000/log?limit=2"
 
 ## How I Used AI
 
-**Moment 1**
+**Moment 1: **
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* 
+- *What came back:* 
+- *What I changed:* 
+ 
 
-**Moment 2**
+**Moment 2: **
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* 
+- *What came back:* 
+- *What I changed:* 
+
+
+
+
+
+
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
