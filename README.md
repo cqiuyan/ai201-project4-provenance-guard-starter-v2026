@@ -366,16 +366,16 @@ $ curl "http://127.0.0.1:5000/log?limit=2"
 
 **Moment 1: **
 
-- *What I asked for:* 
-- *What came back:* 
-- *What I changed:* 
+- *What I asked for:* I pasted my critera and asked for opinion for the five criterion. 
+- *What came back:* four out of five are good with one recommendation to remove a redundant condition. 
+- *What I changed:* I didn't change anything. 
  
 
 **Moment 2: **
 
-- *What I asked for:* 
-- *What came back:* 
-- *What I changed:* 
+- *What I asked for:* I pasted the three label and ask what it thinks. 
+- *What came back:* overall postivie with one concern "Even "unsure" might make me feel like I'm being accused of using AI. I would want to know whether it is simply an uncertain result or whether my writing is actually being flagged for review."
+- *What I changed:* I didn't change anything.
 
 
 
