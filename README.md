@@ -389,7 +389,7 @@ $ curl "http://127.0.0.1:5000/log?limit=2"
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 5 per minute, 50 per day
 
 **Why those numbers and not others:**
 <!-- Think about two people: a real writer submitting their own work a few
@@ -397,16 +397,69 @@ $ curl "http://127.0.0.1:5000/log?limit=2"
      thresholds. Your numbers have to be liveable for the first and hostile to
      the second. -->
 
+A real writer submits a few times an hour. At most they resubmit three or
+four times in quick succession after small edits, to see if the result
+changes. Five a minute never gets in their way, and no honest writer comes
+near 50 in a day.
+
+A script mapping my thresholds needs hundreds of nearly identical
+submissions to find where "unsure" turns into "AI". At 50 a day it would
+take 20 days to send a thousand variations from one caller, instead of 5
+days at the starter's 200. Each submission also runs a language model for a
+second or two, so 5 a minute caps how much of my laptop one caller can use.
+
+I didn't go lower. 2 or 3 a minute would start blocking a writer checking a
+few edits, and that's the person the limit is supposed to leave alone.
+
 **What a caller counts as:** <!-- per address, or per creator_id? They fail
 differently — one script can look like a thousand callers, and one household
 can look like one. -->
+
+Per `creator_id`, falling back to the IP address when there isn't one
+(`app.py::rate_limit_key`). That keeps one household or classroom sharing an
+address from being counted as a single caller. The weakness is the other
+direction: `creator_id` is whatever the caller sends, so a script that
+invents a new one for every request never hits the limit at all. Counting
+per address would catch that script but would lump a whole school's
+network into one caller. Neither choice is safe; this one protects the
+writers and leaves the door open to a script that rotates ids.
 
 **The run of status codes when I pushed past it:**
 
 <!-- python run_attacks.py --flood 15 -->
 
 ```
+15 submissions as 'flood_tester' against http://127.0.0.1:5000
+The first one is slow while the model loads.
 
+  [ 1/15] 200
+  [ 2/15] 200
+  [ 3/15] 200
+  [ 4/15] 200
+  [ 5/15] 200
+  [ 6/15] 429
+  [ 7/15] 429
+  [ 8/15] 429
+  [ 9/15] 429
+  [10/15] 429
+  [11/15] 429
+  [12/15] 429
+  [13/15] 429
+  [14/15] 429
+  [15/15] 429
+
+============================================================
+200 200 200 200 200 429 429 429 429 429 429 429 429 429 429
+============================================================
+
+10 of 15 were rate limited. Paste the run above into your README
+under **Rate Limiting**, and check GET /log recorded the rejections.
+```
+
+Every one of the 10 rejections is in the audit log, e.g.:
+
+```json
+{"timestamp": "2026-11-10T23:02:36+00:00", "creator_id": "flood_tester", "event": "rejected", "status": "rejected", "reason": "rate_limited", "limit": "5 per 1 minute"}
 ```
 
 ---
