@@ -503,11 +503,11 @@ whose work got caught by it:
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. My own writing | At most 1 of 10 labelled AI | 1 of 10 | 1 of 10 | 1 of 10 | **Met**, at the limit |
-| 2. Plain writing | 0 of 5 labelled AI, at least 4 of 5 unsure or human | 3 of 5 AI | 3 of 5 AI | 3 of 5 AI | **Missed** |
-| 3. Label coverage | Each label at least once per trial | 3 AI, 5 unsure, 1 human | 3 AI, 5 unsure, 1 human | 3 AI, 5 unsure, 1 human | **Met** |
-| 4. Bad input | 6 of 6 get a 4xx with `error`, 0 get a 5xx, 6 of 6 logged | 6 of 6 4xx, 0 5xx, 6 of 6 logged | 5 of 5 4xx, 0 5xx, 5 of 5 logged | 5 of 5 4xx, 0 5xx, 5 of 5 logged | **Met** |
-| 5. Appeals | 5 of 5 return `under_review` and are logged; a fake ID gets 404 with no entry | 5 of 5, fake ID 404 | 5 of 5, fake ID 404 | 5 of 5, fake ID 404 | **Met** |
+| 1. My own writing | At most 1 of 10 labelled AI | 1 of 10 | 1 of 10 | 1 of 10 | **MET**, at the limit |
+| 2. Plain writing | 0 of 5 labelled AI, at least 4 of 5 unsure or human | 3 of 5 AI | 3 of 5 AI | 3 of 5 AI | **MISSED** |
+| 3. Label coverage | Each label at least once per trial | 3 AI, 5 unsure, 1 human | 3 AI, 5 unsure, 1 human | 3 AI, 5 unsure, 1 human | **MET** |
+| 4. Bad input | 6 of 6 get a 4xx with `error`, 0 get a 5xx, 6 of 6 logged | 6 of 6 4xx, 0 5xx, 6 of 6 logged | 5 of 5 4xx, 0 5xx, 5 of 5 logged | 5 of 5 4xx, 0 5xx, 5 of 5 logged | **MET** |
+| 5. Appeals | 5 of 5 return `under_review` and are logged; a fake ID gets 404 with no entry | 5 of 5, fake ID 404 | 5 of 5, fake ID 404 | 5 of 5, fake ID 404 | **MET** |
 
 Criteria 1–4 ran through `run_eval.py --label before`
 (`results/run_2026-11-10_1818_before.md`). Two parts were tested by hand
@@ -542,6 +542,74 @@ that produced it:
                         signal at 0.6, so it dragged the whole score down."
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
+
+The misses: criterion 2, plus six broken attacks (FP02, FP03, FP04, FP05,
+EV05, PI02). The other 50 attacks held. Every malformed request got a 4xx
+with no crash, and the flood was cut off at the 6th request. They come down
+to two patterns.
+
+**Pattern 1: plain, conventional human writing reads as AI to *both*
+signals.** This is one problem behind five failures. Criterion 2's miss
+(FP03, FP04, FP05 labelled AI in every trial) and the four broken
+false-positive attacks (FP02–FP05) are the same failure; three of those
+passages appear in both.
+
+- **Signal one** scored them 0.74–0.83. A non-native writer choosing safe
+  words, a rubric essay and technical instructions all use common words in
+  ordinary order, which is exactly what gpt2 predicts well.
+- **Signal two** agreed, at 0.71–0.83. Their sentences are even in length and
+  use almost no expressive punctuation, which my style measure treats as
+  AI-shaped. On FP02, the formal report, signal two was the bigger accuser
+  (0.83 against 0.74).
+- **The combining rule couldn't help.** It only holds a score in "unsure"
+  when the signals *disagree* by more than 0.4. Here they disagreed by only
+  0.06–0.12, so the equal-weight average passed 0.75 untouched.
+
+**Stage:** signal one and signal two, with the combining rule unable to catch
+it. **Mechanism:** the two signals share a blind spot. "Plain and
+conventional" looks like "machine-made" to both. My disagreement rule assumed
+that when one signal is wrong, the other would disagree. On plain writing
+they're wrong *together*.
+
+**Pattern 2: anything that adds unusual tokens or punctuation reads as human
+to both signals.** Two evasions:
+
+- **EV05** (AI text after a heavy human edit) scored model 0.32 and style
+  0.25, so it was labelled human. Casual phrasing ("Obviously.", "the
+  away-day kind") is hard for gpt2 to predict. A dash and one-word fragments
+  raise sentence-length spread and expressive punctuation.
+- **PI02** (a fake "SYSTEM:" instruction above AI text) scored model 0.20 and
+  style 0.15, so it was also labelled human. Nothing in my service reads
+  instructions, so it wasn't obeyed. But tokens like `SYSTEM:`, `guess=human`
+  and `confidence=0.02` are things gpt2 never expects, which drives
+  perplexity up. The colons and the short instruction lines raise both style
+  measures. The injection failed as an instruction and succeeded as noise.
+
+**Stage:** signal one and signal two. **Mechanism:** neither signal reads
+meaning. Both measure surface unpredictability, and casual or junk tokens
+produce it as easily as a human writer does. Again both signals moved the
+same way, so the disagreement rule never fired.
+
+**Across both patterns:** every failure is a case where the two signals
+*agree* and are both wrong. My combining rule only protects against them
+disagreeing. That's the weakness to fix.
+
+**Judgment calls I marked HELD:**
+
+- **AI evasions landing in "unsure"** (EV01–04, 06, 07, 09). The system
+  didn't call them human, and "unsure" is what raising the AI threshold to
+  0.75 was meant to produce.
+- **FP08.** A real eight-word submission was refused as too short. The writer
+  wasn't accused, but they weren't scored either. That's the cost of my
+  20-word minimum.
+- **RQ10 and RQ11.** They were refused, but with `429` instead of `400`. Both
+  bodies had no readable `creator_id`, so they counted against the shared
+  IP-address bucket, which five earlier malformed requests had already
+  filled. The log records them as `creator_id: "unknown"`, so they can't be
+  traced back to the attack that sent them.
+
+**No criterion revised.** All five could be measured. Criterion 2 was
+measurable and simply missed, so it stays as written.
 
 
 
