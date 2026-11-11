@@ -503,11 +503,22 @@ whose work got caught by it:
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. My own writing | At most 1 of 10 labelled AI | 1 of 10 | 1 of 10 | 1 of 10 | **Met**, at the limit |
+| 2. Plain writing | 0 of 5 labelled AI, at least 4 of 5 unsure or human | 3 of 5 AI | 3 of 5 AI | 3 of 5 AI | **Missed** |
+| 3. Label coverage | Each label at least once per trial | 3 AI, 5 unsure, 1 human | 3 AI, 5 unsure, 1 human | 3 AI, 5 unsure, 1 human | **Met** |
+| 4. Bad input | 6 of 6 get a 4xx with `error`, 0 get a 5xx, 6 of 6 logged | 6 of 6 4xx, 0 5xx, 6 of 6 logged | 5 of 5 4xx, 0 5xx, 5 of 5 logged | 5 of 5 4xx, 0 5xx, 5 of 5 logged | **Met** |
+| 5. Appeals | 5 of 5 return `under_review` and are logged; a fake ID gets 404 with no entry | 5 of 5, fake ID 404 | 5 of 5, fake ID 404 | 5 of 5, fake ID 404 | **Met** |
+
+Criteria 1–4 ran through `run_eval.py --label before`
+(`results/run_2026-11-10_1818_before.md`). Two parts were tested by hand
+with `curl`, because `run_eval.py` only sends submissions as JSON objects:
+
+- **Criterion 4, the sixth case:** a body that's a JSON list. I sent it once,
+  so Run 1 covers 6 of 6, and Runs 2 and 3 cover the 5 sent automatically.
+  It returned `400 invalid_json` and was logged as `rejected`.
+- **Criterion 5:** three rounds of 5 appeals plus a fake ID. That left 15
+  appeal entries in the log, none for the fake ID, and every original
+  decision still `decided`.
 
 **Real output from one trial**, pasted as text, naming the file and function
 that produced it:
