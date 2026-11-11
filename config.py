@@ -76,10 +76,11 @@ DISAGREEMENT_GAP = 0.4
 # that decide who pays for it.
 
 HUMAN_THRESHOLD = 0.35
-# Raised from 0.65. On my test inputs, clearly-AI text scored 0.71, so it now
-# lands in unsure: one missed detection, accepted so that human writing in
-# 0.65–0.75 isn't accused. Plain human writing (0.84) still crosses it.
-AI_THRESHOLD = 0.75
+# Raised from 0.65 to 0.75 in unit 7, then to 0.82 in unit 8 (The
+# Improvement). At 0.75 the attack set's plain human writing (FP02–FP05,
+# 0.77–0.80) was labelled AI, because both signals agreed it looked AI. At 0.82
+# those land in unsure; the cost is that AI text scoring 0.75–0.82 does too.
+AI_THRESHOLD = 0.82
 
 # ⚠️ One thing that catches people out in Milestone 5. A weighted average can
 # only land between its two inputs — so while `style_signal` is still the stub
