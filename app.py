@@ -24,6 +24,7 @@ Routes:
     GET  /health      is the service up, and is the model loaded
 """
 
+import hashlib
 import time
 import uuid
 
@@ -51,6 +52,28 @@ def elapsed_ms():
     """Milliseconds since this request arrived, for the log's duration_ms."""
     start = g.get("start")
     return None if start is None else round((time.perf_counter() - start) * 1000, 1)
+
+
+def describe_input(payload):
+    """
+    What came in, for the log, without the text itself.
+
+    The log is committed to a public repo, so a submission is recorded by its
+    size and a short hash: enough to tell two submissions apart, or spot the
+    same one sent twice, without keeping anyone's writing.
+    """
+    if not isinstance(payload, dict):
+        return {"input_type": "not_a_json_object", "body_bytes": len(request.get_data())}
+    text = payload.get("text")
+    if not isinstance(text, str):
+        return {"input_type": "missing" if text is None and "text" not in payload
+                else type(text).__name__}
+    text = text.strip()
+    return {
+        "text_chars": len(text),
+        "text_words": len(text.split()),
+        "text_hash": hashlib.sha256(text.encode("utf-8")).hexdigest()[:12],
+    }
 
 # The input limits from the endpoint contract. Fewer than 20 words is too
 # little for the model to be surprised by; 10,000 characters is plenty.
@@ -125,14 +148,14 @@ if config.RATE_LIMITING_ENABLED:
 
         ⚠️ An attack that shows up only as an absence is one you'll never find.
         """
-        payload = request.get_json(silent=True)
-        if not isinstance(payload, dict):
-            payload = {}
+        raw = request.get_json(silent=True)
+        payload = raw if isinstance(raw, dict) else {}
         audit.log_rejection(
             creator_id=payload.get("creator_id", "unknown"),
             reason="rate_limited",
             limit=str(exc.description),
             duration_ms=elapsed_ms(),
+            **describe_input(raw),
         )
         return jsonify({
             "error": "rate_limited",
@@ -234,6 +257,7 @@ def submit():
             creator_id=creator if isinstance(creator, str) else "unknown",
             reason=error,
             duration_ms=elapsed_ms(),
+            **describe_input(payload),
         )
         return jsonify({"error": error, "message": message}), status
 
@@ -276,6 +300,7 @@ def submit():
         label=label,
         status="decided",
         duration_ms=elapsed_ms(),
+        **describe_input(payload),
     )
 
     return jsonify({
