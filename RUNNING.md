@@ -49,10 +49,10 @@ curl -X POST http://127.0.0.1:5000/ping \
 
 | | |
 |---|---|
-| Python | 3.11, 3.12 or 3.13 (not 3.14). Tested on 3.13.0. |
+| Python | 3.11, 3.12 or 3.13 (not 3.14). Tested on 3.13.0, and from a fresh clone on 3.12.4. If conda is active, `python3` may be conda's Python, which is fine as long as it's one of these versions. Check with `python3 --version`. |
 | Dependencies | `requirements.txt`, pinned with lower and upper bounds. Tested with Flask 3.1.3, Flask-Limiter 3.12, requests 2.34.2, transformers 4.57.6, torch 2.15.0, gunicorn 23.0.0, certifi 2026.10.23. |
 | Model | gpt2, about 525 MB, downloaded once by `python detector.py` into `~/.cache/huggingface`. Later runs need no network. |
-| Disk | About 1 GB for the virtual environment, plus the model. |
+| Disk | About 9 GB free before you start; `python test.py` checks for it. The virtual environment itself is about 1 GB and the model about 525 MB; the rest is room for PyTorch's install and the model cache. |
 | Memory | Tested on an 8 GB machine (macOS 26.5, Apple silicon). |
 | Port | 5000. On macOS, AirPlay Receiver can also hold it; if you get "Address already in use", see [When something goes wrong](#when-something-goes-wrong). |
 
@@ -63,6 +63,12 @@ entry has a `timestamp`, `duration_ms`, what came in (`text_chars`,
 `input_type` when the text was missing or wasn't a string) and what came out
 (scores, guess and label, or the refusal `reason` and `endpoint`). Read it
 back with `curl "http://127.0.0.1:5000/log?limit=20"`.
+
+**Tested from a fresh clone** on 2026-11-11: cloned from GitHub, followed the
+steps above in a new folder with conda's Python 3.12.4. The install took 43
+seconds, the model was already cached, and `/ping` answered. One thing failed:
+`test.py`'s disk check (8.2 GB free, it wants about 9 GB). That's why the
+Disk row above now asks for 9 GB rather than 1 GB. Everything else passed.
 
 **The first request is slow.** The model loads into memory on the first
 submission after start-up, which takes several seconds. After that a

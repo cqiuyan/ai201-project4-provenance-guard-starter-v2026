@@ -1023,3 +1023,76 @@ What's new:
 - **Fixing the attacks that still get through** (EV05, PI02) and the
   untraceable RQ10/RQ11 rejections. Those are unit 8's open problems, and
   fixing them would be shape B or C, not A.
+
+**Instrumentation**
+
+Every request to `/submit` and `/appeal` writes one JSON line to
+`logs/audit.jsonl` (`audit.py::_append`, called from `app.py`). Since this
+unit, each entry has:
+
+- **When:** `timestamp`, and `duration_ms` from the moment the request
+  arrived to the moment it was logged (`app.py::start_timer` and
+  `elapsed_ms`).
+- **What came in:** `text_chars`, `text_words` and a 12-character
+  `text_hash`, never the text itself, because this log is committed to a
+  public repo. When the text was missing or wasn't a string, `input_type`
+  instead, and `body_bytes` when the body wasn't a JSON object.
+- **What came out:** for a decision, `guess`, `model_score`, `style_score`,
+  `combined_score` and `label`. For a refusal, `reason` and `endpoint`.
+  Refused appeals are now logged too, as `rejected` with the
+  `requested_content_id`.
+
+Twelve entries from a real session on 2026-11-12, against the running
+service (`python app.py`, freshly started). Twelve test writers (`writer_01`
+to `writer_12`) each submitted one piece, using texts I wrote for the test.
+Then I triggered failures on purpose: an empty text, a missing `text` field,
+unparseable JSON, an appeal against a made-up ID, and `writer_01` submitting
+again until the rate limit hit. Last came one real appeal. The first entry
+is the cold start, while the model loaded.
+
+```json
+{"timestamp": "2026-11-12T01:46:32+00:00", "content_id": "4de35aab-3cd8-44c8-8493-6bd1fdccc421", "creator_id": "writer_01", "guess": "unsure", "model_score": 0.6801, "style_score": 0.6664, "combined_score": 0.6733, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 5458.4, "text_chars": 223, "text_words": 45, "text_hash": "160f577defcf"}
+{"timestamp": "2026-11-12T01:46:32+00:00", "content_id": "4c053aa3-aeef-4af7-b66f-2e73a6df6e27", "creator_id": "writer_02", "guess": "unsure", "model_score": 0.7443, "style_score": 0.7607, "combined_score": 0.7525, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 78.9, "text_chars": 279, "text_words": 35, "text_hash": "40573a1c1234"}
+{"timestamp": "2026-11-12T01:46:32+00:00", "content_id": "42f6f8b7-b817-4053-84d4-a3df73d1cd83", "creator_id": "writer_03", "guess": "unsure", "model_score": 0.3527, "style_score": 0.375, "combined_score": 0.3639, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 69.1, "text_chars": 221, "text_words": 43, "text_hash": "01f3478706b2"}
+{"timestamp": "2026-11-12T01:46:32+00:00", "content_id": "3224f258-b8d1-4727-9c91-ed03a63ebaf9", "creator_id": "writer_06", "guess": "ai", "model_score": 0.8878, "style_score": 0.875, "combined_score": 0.8814, "label": "This has a lot in common with AI-generated writing: very predictable wording and evenly shaped sentences. Clear, plain writing by real people can look like this too, so this is not proof. If you wrote it yourself, you can appeal using your submission ID and a person will review it.", "status": "decided", "duration_ms": 57.5, "text_chars": 275, "text_words": 35, "text_hash": "85294c044e86"}
+{"timestamp": "2026-11-12T01:46:33+00:00", "content_id": "38c55532-6a4b-4b3b-b43d-3a7a755baefb", "creator_id": "writer_10", "guess": "unsure", "model_score": 0.7038, "style_score": 0.7995, "combined_score": 0.7516, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 59.1, "text_chars": 267, "text_words": 34, "text_hash": "9e814767c201"}
+{"timestamp": "2026-11-12T01:46:33+00:00", "content_id": "b657df93-d012-4c54-849d-14681a77c45c", "creator_id": "writer_12", "guess": "unsure", "model_score": 0.5743, "style_score": 0.6026, "combined_score": 0.5885, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 64.4, "text_chars": 261, "text_words": 33, "text_hash": "a78df160d61d"}
+{"timestamp": "2026-11-12T01:46:33+00:00", "creator_id": "writer_13", "event": "rejected", "status": "rejected", "reason": "text_too_short", "endpoint": "/submit", "duration_ms": 0.2, "text_chars": 0, "text_words": 0, "text_hash": "e3b0c44298fc"}
+{"timestamp": "2026-11-12T01:46:33+00:00", "creator_id": "writer_14", "event": "rejected", "status": "rejected", "reason": "missing_field", "endpoint": "/submit", "duration_ms": 0.1, "input_type": "missing"}
+{"timestamp": "2026-11-12T01:46:33+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "endpoint": "/submit", "duration_ms": 0.2, "input_type": "not_a_json_object", "body_bytes": 22}
+{"timestamp": "2026-11-12T01:46:33+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "unknown_content_id", "endpoint": "/appeal", "duration_ms": 1.9, "requested_content_id": "not-a-real-id", "reasoning_chars": 11}
+{"timestamp": "2026-11-12T01:46:33+00:00", "creator_id": "writer_01", "event": "rejected", "status": "rejected", "reason": "rate_limited", "limit": "5 per 1 minute", "endpoint": "/submit", "duration_ms": 0.2, "text_chars": 223, "text_words": 45, "text_hash": "160f577defcf"}
+{"timestamp": "2026-11-12T01:46:33+00:00", "content_id": "4de35aab-3cd8-44c8-8493-6bd1fdccc421", "creator_id": "writer_01", "event": "appeal", "status": "under_review", "reasoning": "I wrote this about my own morning.", "duration_ms": 1.0}
+```
+
+Failures are in the record: the `text_too_short`, `missing_field`,
+`invalid_json`, `unknown_content_id` and `rate_limited` entries above are
+each a refused request, logged with how long it took and what came in.
+Entries in the log from before this unit (units 7 and 8) don't have
+`duration_ms` or the input fields, because those didn't exist yet.
+
+**What It Costs**
+
+The cost of one run is **seconds of compute on my laptop**. There's no API
+and no token bill: the model runs locally.
+
+| | Time per request |
+|---|---|
+| **A warm submission**, mean of 10 | **67.2 ms** (median 65.2, range 57.5–85.3) |
+| The cold first submission after start-up | 5,458 ms, once per server start |
+| A refused request | 0.1–1.9 ms |
+
+**How I measured it:** I started the service fresh and sent the session
+above. The 10 warm submissions are `writer_02` to `writer_11`, and the number
+is the mean of their logged `duration_ms`. The service times each request
+itself, from arrival to log line, so the number comes from the log, not from
+a stopwatch or a pricing page. It's wall-clock time on an 8 GB Apple-silicon
+MacBook Air with nothing else heavy running, so a busier machine would be
+slower. All 15 warm decisions in the session averaged 68.4 ms, close to the
+10-run figure.
+
+**For a hundred people a day:** at one submission each, 100 × 67.2 ms =
+6.72 seconds of compute a day, plus one 5.5-second cold start per day if the
+server restarts daily: about 12 seconds of compute a day in total. The real
+cost is that the machine has to stay on with 525 MB of model in memory, not
+the compute itself.
