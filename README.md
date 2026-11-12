@@ -1254,3 +1254,101 @@ response it got, and the log entry it left.
 {"case": "appeal, nonexistent id", "status": 404, "error": "unknown_content_id", "log_entry": {"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "unknown_content_id", "endpoint": "/appeal", "duration_ms": 1.1, "requested_content_id": "c5-t1-no-such-id", "reasoning_chars": 5}}
 {"case": "6th submit in a minute", "status": 429, "error": "rate_limited", "log_entry": {"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "c5_t1_writer", "event": "rejected", "status": "rejected", "reason": "rate_limited", "limit": "5 per 1 minute", "endpoint": "/submit", "duration_ms": 0.2, "text_chars": 201, "text_words": 34, "text_hash": "9d07cc3a9ea3"}}
 ```
+
+**Verdicts and Diagnosis**
+
+All five criteria were **MET** in all three trials, before and after the
+improvement. With no misses, there's no failing stage to diagnose. So the
+honest question is whether my targets were set too low, and for one of them
+they were.
+
+- **Criterion 3 was set low.** I allowed a warm mean of 200 ms, and the
+  trials came in at 60–70 ms, so it would only have failed at roughly 3 times
+  slower. Worse, it set no target at all for the slowest thing a real writer
+  experiences: the **first submission after the service starts**, which took
+  **5.4–5.6 seconds** in every "before" trial while everything after it took
+  about 65 ms. My criterion reported that number but never judged it.
+  **I'd tighten criterion 3 to:** warm mean under 100 ms, *and* the first
+  submission after start-up under 2,000 ms. Against the "before" run, that
+  tighter version is **MISSED in all three trials** (5,550, 5,395 and 5,533
+  ms). The stage is signal one (`detector.py`); the mechanism is that the
+  model loads lazily, on the first request that needs it, so the first writer
+  pays the whole load.
+- **Criteria 1, 2 and 5 are pass/fail checks of correctness, not degree.**
+  The logging is deterministic, so they either work or they don't. They
+  weren't set low; they just can't be partly met.
+- **Criterion 4 passed with room to spare** (11–12 GB free each time), but
+  only because I'd emptied the trash first. With the 8.2 GB I had in
+  Milestone 3, `test.py`'s disk check would have failed it.
+
+**The Improvement**
+
+**What I changed:** one thing. `app.py::main` now calls `detector.warm_up()`
+before the server starts taking requests, so the model is loaded at start-up
+instead of on the first submission. In debug mode it only runs in the
+process that actually serves, so the model isn't loaded twice.
+
+**Which diagnosis pointed at it:** the tightened criterion 3 above. The first
+writer after every start waited about 80 times longer than everyone else,
+because signal one loaded the model lazily.
+
+**Start-up cost, before and after** (`measure_startup.py::main`, three fresh
+starts each, `results/startup_2026-11-11_2011_before.md` and
+`results/startup_2026-11-11_2012_after.md`):
+
+| | Before | After |
+|---|---|---|
+| Server ready to answer | 0.22 / 0.32 / 0.32 s | 5.49 / 5.17 / 4.29 s |
+| Memory held while idle | 43.1 MB | 237.0 / 234.7 / 388.2 MB |
+| First submission | 5,693 / 4,682 / 4,101 ms | 1,546 / 1,639 / 1,275 ms |
+
+**Run Log — after** (`results/capstone_2026-11-11_2020_after.md`, same
+`run_capstone.py::main`, unchanged)
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Every request leaves timing and input metadata | 12 of 12 complete entries | 12/12 | 12/12 | 12/12 | MET |
+| 2. The log never stores submitted writing | 0 of 10 leaked, 10 of 10 with metadata | 0/10 leaked, 10/10 | 0/10 leaked, 10/10 | 0/10 leaked, 10/10 | MET |
+| 3. Timings give a local compute cost | 10 of 10 timed, warm mean under 200 ms | 10/10, 72.3 ms | 10/10, 61.3 ms | 10/10, 86.8 ms | MET |
+| 4. A fresh clone starts from RUNNING.md | 1 complete setup per trial | succeeded | succeeded | succeeded | MET |
+| 5. Failed requests explain themselves and stay visible | 5 of 5, 0 5xx, 0 fabricated | 5/5, 0, 0 | 5/5, 0, 0 | 5/5, 0, 0 | MET |
+
+**Before and after, side by side**
+
+| | Before | After |
+|---|---|---|
+| Criteria 1–5 | MET ×3 each | MET ×3 each |
+| Criterion 3, warm mean | 60.4 / 70.3 / 64.9 ms | 72.3 / 61.3 / 86.8 ms |
+| **First submission after start** (criterion 3's `cold_ms`) | **5,550 / 5,395 / 5,533 ms** | **1,432 / 465 / 1,570 ms** |
+| Tightened criterion 3 (warm under 100 ms, first under 2,000 ms) | MISSED ×3 | **MET ×3** |
+| Criterion 4's fresh clone | without the warm-up | with the warm-up (committed and pushed first) |
+
+**Did it help, and how do I know:**
+
+**Yes, for the first writer, and it cost something.** The first submission
+after a start went from about 5.5 seconds to 0.5–1.6 seconds in the capstone
+runs, and the tightened criterion 3 goes from missed to met. Warm requests
+didn't change beyond normal variation (61–87 ms after, 60–70 before), which is
+what I'd expect, since the change only touches the first one.
+
+**The cost moved rather than disappeared:**
+
+- **Start-up got slower.** The server now takes 4.3–5.5 seconds to start
+  answering, instead of 0.2–0.3.
+- **It holds more memory.** Idle memory went from 43 MB to 235–388 MB, even
+  if nobody ever submits anything.
+
+For a service that starts once and serves many writers, that's a good trade.
+For one that restarts often, it isn't.
+
+**It's only a partial fix.** The first submission still takes 0.5–1.6
+seconds, not the ~65 ms of a warm one. `warm_up()` loads the model but never
+runs it, and PyTorch's first real pass through the model has a one-time setup
+cost of its own. Scoring one short sample text during start-up would likely
+remove that too. I measured this, then chose to keep the change as it was,
+one change, measured, rather than iterate further.
+
+**A note on the log:** my first "after" run was stopped partway through
+trial 1, because criterion 4 would have cloned code I hadn't pushed yet. I
+removed its 43 entries from `logs/audit.jsonl`, committed and pushed the
+improvement, then ran all three "after" trials cleanly.
