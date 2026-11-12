@@ -25,6 +25,7 @@ Routes:
 """
 
 import hashlib
+import os
 import time
 import uuid
 
@@ -422,6 +423,18 @@ def main():
     print('    -H "Content-Type: application/json" \\')
     print("    -d '{\"message\": \"hello\"}'")
     print()
+
+    # Load the model before taking requests, so the first writer after a start
+    # doesn't wait ~5 s for it (capstone improvement). In debug mode the
+    # reloader runs main() twice; only the child process that actually serves
+    # has WERKZEUG_RUN_MAIN set, so the model is loaded once, not twice.
+    if not config.DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        try:
+            print(f"Loading {config.DETECTOR_MODEL} before taking requests…")
+            detector.warm_up()
+        except detector.DetectorUnavailable as exc:
+            print(f"  not loaded: {exc}\n  /submit will answer 503 until it is.")
+
     # debug=True hands out an interactive debugger, so it's local-only — see config.py
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG)
 
