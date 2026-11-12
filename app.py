@@ -24,9 +24,10 @@ Routes:
     GET  /health      is the service up, and is the model loaded
 """
 
+import time
 import uuid
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 
 import audit
 import config
@@ -35,6 +36,21 @@ import scoring
 import stylometry
 
 app = Flask(__name__)
+
+
+# ── Timing — capstone ─────────────────────────────────────────────────────────
+# Registered before the limiter below, so it runs first and a request the
+# limiter turns away with a 429 still has a start time.
+
+@app.before_request
+def start_timer():
+    g.start = time.perf_counter()
+
+
+def elapsed_ms():
+    """Milliseconds since this request arrived, for the log's duration_ms."""
+    start = g.get("start")
+    return None if start is None else round((time.perf_counter() - start) * 1000, 1)
 
 # The input limits from the endpoint contract. Fewer than 20 words is too
 # little for the model to be surprised by; 10,000 characters is plenty.
@@ -116,6 +132,7 @@ if config.RATE_LIMITING_ENABLED:
             creator_id=payload.get("creator_id", "unknown"),
             reason="rate_limited",
             limit=str(exc.description),
+            duration_ms=elapsed_ms(),
         )
         return jsonify({
             "error": "rate_limited",
@@ -216,6 +233,7 @@ def submit():
         audit.log_rejection(
             creator_id=creator if isinstance(creator, str) else "unknown",
             reason=error,
+            duration_ms=elapsed_ms(),
         )
         return jsonify({"error": error, "message": message}), status
 
@@ -257,6 +275,7 @@ def submit():
         combined_score=combined_score,
         label=label,
         status="decided",
+        duration_ms=elapsed_ms(),
     )
 
     return jsonify({
@@ -323,6 +342,7 @@ def appeal():
         content_id=content_id,
         creator_id=original["creator_id"],
         reasoning=reasoning,
+        duration_ms=elapsed_ms(),
     )
 
     return jsonify({
