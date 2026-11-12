@@ -8,6 +8,68 @@ assumed — the starter ships one that already answers.
 
 ---
 
+## Capstone run path (Path B: local with logs)
+
+Provenance Guard runs locally, not on a host. The gpt2 model it loads is
+about 525 MB on disk, which is more than a 512 MB free host gives you (see
+[This project will not fit a free host](#this-project-will-not-fit-a-free-host)).
+
+**The start command**, from the repository folder with the virtual
+environment active:
+
+```bash
+python app.py
+```
+
+It serves on `http://127.0.0.1:5000` and writes every request to
+`logs/audit.jsonl`. Stop it with Ctrl+C.
+
+**From a fresh clone**, the whole path is:
+
+```bash
+git clone https://github.com/cqiuyan/ai201-project4-provenance-guard-starter-v2026.git
+cd ai201-project4-provenance-guard-starter-v2026
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python detector.py                 # first time only: downloads gpt2 (~525 MB)
+python test.py                     # should end "You're set."
+python app.py
+```
+
+Then, in a second terminal, check it answers:
+
+```bash
+curl -X POST http://127.0.0.1:5000/ping \
+  -H "Content-Type: application/json" \
+  -d '{"message": "hello"}'
+```
+
+**What the environment needs**
+
+| | |
+|---|---|
+| Python | 3.11, 3.12 or 3.13 (not 3.14). Tested on 3.13.0. |
+| Dependencies | `requirements.txt`, pinned with lower and upper bounds. Tested with Flask 3.1.3, Flask-Limiter 3.12, requests 2.34.2, transformers 4.57.6, torch 2.15.0, gunicorn 23.0.0, certifi 2026.10.23. |
+| Model | gpt2, about 525 MB, downloaded once by `python detector.py` into `~/.cache/huggingface`. Later runs need no network. |
+| Disk | About 1 GB for the virtual environment, plus the model. |
+| Memory | Tested on an 8 GB machine (macOS 26.5, Apple silicon). |
+| Port | 5000. On macOS, AirPlay Receiver can also hold it; if you get "Address already in use", see [When something goes wrong](#when-something-goes-wrong). |
+
+**What a run records.** Every request to `/submit` and `/appeal` adds one
+line to `logs/audit.jsonl`, including refused and rate-limited ones. Each
+entry has a `timestamp`, `duration_ms`, what came in (`text_chars`,
+`text_words` and a 12-character `text_hash`, never the text itself, or
+`input_type` when the text was missing or wasn't a string) and what came out
+(scores, guess and label, or the refusal `reason` and `endpoint`). Read it
+back with `curl "http://127.0.0.1:5000/log?limit=20"`.
+
+**The first request is slow.** The model loads into memory on the first
+submission after start-up, which takes several seconds. After that a
+submission usually takes under a second.
+
+---
+
 ## Before your first class
 
 ```bash
