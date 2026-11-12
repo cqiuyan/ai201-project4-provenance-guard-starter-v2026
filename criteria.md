@@ -149,3 +149,48 @@ by hand with `curl`: submit, take the `content_id`, appeal, then read the log.
      A number you missed stays where it is, gets diagnosed, and gets a fix
      attempted. That's where the points are.
      ───────────────────────────────────────────────────────────────────────── -->
+
+---
+
+# Capstone criteria (unit 9)
+
+Written before running any capstone tests. The five criteria above are from
+unit 7 and stay as they were.
+
+## 1. Every request leaves useful timing and input metadata (extension)
+
+In a test of 12 requests covering successful /submit decisions, rejected submissions, one rate-limited submission, and one successful /appeal, 12 of 12 produce an audit entry with a timestamp, a numeric duration_ms of 0 or more, and an identifiable outcome (status and either a guess or a reason/appeal event). Every /submit entry also has text_chars, text_words, and a 12-character text_hash when text is supplied as a string, or input_type when it is missing or invalid.
+
+**Why this target (rather than stricter or looser):** I chose 12 requests because that is enough to exercise the different paths through my local service—accepted submissions, validation failures, rate limiting, and appeals—without simply repeating the same success case dozens of times. I require 12/12 complete records, not 11/12, because even one missing rejection could hide an attempted attack and one missing duration could distort my cost estimate. A larger sample would be useful for load testing, but would not make a missing field acceptable: these fields are generated deterministically on every request.
+
+---
+
+## 2. The public audit log never stores submitted writing (extension)
+
+For 10 distinct valid submissions containing unique test sentences, 0 of 10 audit entries include the complete submitted text or any of those unique sentences verbatim. Instead, 10 of 10 contain the submission's character count, word count, and a 12-character SHA-256-derived hash.
+
+**Why this target (rather than stricter or looser):** My audit log can be committed to a public repository, so even one leaked submission would expose someone's writing; that is why the acceptable leak count is 0, not 1 or 2. I use 10 distinct test passages so a test can check that none reappears verbatim in the log, while avoiding unnecessary real user data. Requiring no input metadata at all would be stricter about storage but would defeat the extension: text_chars, text_words, and the 12-character hash let me diagnose input size and duplicates without keeping the original passage. This criterion covers /submit text; appeal reasoning is a separate privacy limitation.
+
+---
+
+## 3. Timings are complete enough to estimate local compute cost (extension)
+
+After one model-loading (cold) request, send 10 valid warm submissions. 10 of 10 must have numeric duration_ms values in the audit log, and their mean logged duration must be under 200 ms on the documented 8 GB Apple-silicon test laptop under a comparable idle workload. Report the mean in milliseconds and the approximate total compute time for 100 submissions using those readings; report the cold-start duration separately.
+
+**Why this target (rather than stricter or looser):** I previously measured a 67.2 ms warm-request average, so a ceiling of 200 ms allows for normal background activity on my 8 GB laptop without treating a threefold slowdown as normal. A stricter 70 ms limit would likely fail because of ordinary machine variation, while a looser 1,000 ms limit could hide a significant performance regression. I require timing for all 10 requests because a missing slow request would make the average misleading. I measure the cold model-loading request separately so one startup delay does not distort the estimated cost of 100 routine submissions.
+
+---
+
+## 4. Someone can start the service from the documented local run path (extension)
+
+On one fresh clone on a machine meeting the documented Python, disk, and memory requirements, a tester can follow RUNNING.md to install dependencies, make the GPT-2 model available, pass python test.py, start the service with python app.py, and get a successful JSON response from POST /ping and POST /submit, without changing project source code.
+
+**Why this target (rather than stricter or looser):** My chosen deployment is Path B: local, not a public cloud host, so the meaningful success condition is one complete fresh-clone setup with no edits to source code—not a public URL or uptime guarantee. One independently repeatable setup is enough to uncover missing instructions or dependencies; asking for ten machines would test hardware compatibility beyond my project scope. I do not loosen the requirement to “the server starts on my laptop,” because that would miss fresh-install problems. I limit the test to documented hardware because my model needs roughly 9 GB free disk space, and an earlier run with 8.2 GB failed that requirement.
+
+---
+
+## 5. Failed requests return explanations and remain visible (extension; bad path)
+
+Send 5 deliberately failing requests: empty text, missing text, malformed JSON, an /appeal with a nonexistent content_id, and a sixth /submit from the same creator_id within one minute of five accepted submissions. 5 of 5 must return a 4xx status (the final case specifically 429), a JSON error field, and a corresponding status: "rejected" audit entry containing reason, endpoint, and numeric duration_ms. 0 of 5 may return a 5xx error or create a fake successful decision/appeal.
+
+**Why this target (rather than stricter or looser):** The five cases represent different failures my service explicitly handles, including the configured limit of 5 submissions per minute. I require 5/5 clear 4xx responses and rejection logs, rather than allowing 4/5, because one invisible refusal could conceal abusive traffic or leave a writer unable to tell why an appeal failed. A stricter goal such as zero milliseconds of response time is not meaningful on a local laptop; the important observable behavior is the correct error, recorded reason, endpoint, and duration. I also require zero fabricated decisions or appeals because a failed request must never look successful.
