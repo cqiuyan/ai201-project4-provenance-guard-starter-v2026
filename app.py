@@ -154,6 +154,7 @@ if config.RATE_LIMITING_ENABLED:
             creator_id=payload.get("creator_id", "unknown"),
             reason="rate_limited",
             limit=str(exc.description),
+            endpoint=request.path,
             duration_ms=elapsed_ms(),
             **describe_input(raw),
         )
@@ -256,6 +257,7 @@ def submit():
         audit.log_rejection(
             creator_id=creator if isinstance(creator, str) else "unknown",
             reason=error,
+            endpoint=request.path,
             duration_ms=elapsed_ms(),
             **describe_input(payload),
         )
@@ -338,7 +340,20 @@ def appeal():
     """
     payload = request.get_json(silent=True)
 
+    # A refused appeal is logged as a rejection, never as an appeal, so a typo'd
+    # or made-up id leaves a trace without putting anything under review.
     def refuse(status, error, message):
+        fields = payload if isinstance(payload, dict) else {}
+        requested = fields.get("content_id")
+        reasoning = fields.get("reasoning")
+        audit.log_rejection(
+            creator_id="unknown",
+            reason=error,
+            endpoint=request.path,
+            duration_ms=elapsed_ms(),
+            requested_content_id=requested if isinstance(requested, str) else None,
+            reasoning_chars=len(reasoning) if isinstance(reasoning, str) else None,
+        )
         return jsonify({"error": error, "message": message}), status
 
     if not isinstance(payload, dict):
