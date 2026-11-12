@@ -1096,3 +1096,161 @@ slower. All 15 warm decisions in the session averaged 68.4 ms, close to the
 server restarts daily: about 12 seconds of compute a day in total. The real
 cost is that the machine has to stay on with 525 MB of model in memory, not
 the compute itself.
+
+**Run Log — before**
+
+From `results/capstone_2026-11-11_2006_before.md`, produced by
+`run_capstone.py::main`. Each trial starts a fresh copy of the service on
+port 5052 (a real cold start, fresh rate-limit counters), runs criteria 3, 2,
+1 and 5 against it, stops it, then makes a fresh clone from GitHub for
+criterion 4 and deletes it afterwards. Every check reads back exactly the log
+entries its own requests created.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Every request leaves timing and input metadata | 12 of 12 complete entries | 12/12 | 12/12 | 12/12 | MET |
+| 2. The log never stores submitted writing | 0 of 10 leaked, 10 of 10 with metadata | 0/10 leaked, 10/10 | 0/10 leaked, 10/10 | 0/10 leaked, 10/10 | MET |
+| 3. Timings give a local compute cost | 10 of 10 timed, warm mean under 200 ms | 10/10, 60.4 ms | 10/10, 70.3 ms | 10/10, 64.9 ms | MET |
+| 4. A fresh clone starts from RUNNING.md | 1 complete setup per trial | succeeded | succeeded | succeeded | MET |
+| 5. Failed requests explain themselves and stay visible | 5 of 5, 0 5xx, 0 fabricated | 5/5, 0, 0 | 5/5, 0, 0 | 5/5, 0, 0 | MET |
+
+**Why the counts are identical across trials:** these were three real
+re-runs. The cold starts were 5,550, 5,395, 5,532 ms, the
+warm means 60.4, 70.3, 64.9 ms, and each trial's fresh clone
+installed its own dependencies (29.9–32.7 s each). The counts don't move
+because everything they check is deterministic: the same request always gets
+the same log fields and the same refusal, and gpt2 scores the same text the
+same way every time. Only the timings vary, and they did.
+
+**Real output, trial 1**
+
+Criterion 1 (`run_capstone.py::criterion_1`): the 12 log entries its
+requests wrote, as they appear in `logs/audit.jsonl`. Five accepted
+submissions from one writer, the sixth rate-limited, five refused
+submissions, then an appeal.
+
+```json
+{"timestamp": "2026-11-12T02:02:37+00:00", "content_id": "364b07e0-6d64-4f8e-8e50-f11c94aa267a", "creator_id": "c1_t1_writer", "guess": "unsure", "model_score": 0.0647, "style_score": 0.875, "combined_score": 0.4698, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 58.5, "text_chars": 208, "text_words": 36, "text_hash": "327a5983d212"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "content_id": "4136f4af-bf1f-4979-98a9-8b5b544cb38b", "creator_id": "c1_t1_writer", "guess": "unsure", "model_score": 0.047, "style_score": 0.875, "combined_score": 0.461, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 76.9, "text_chars": 205, "text_words": 35, "text_hash": "f856d428a448"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "content_id": "4ccad555-048f-4370-b225-f572c19872cf", "creator_id": "c1_t1_writer", "guess": "unsure", "model_score": 0.0177, "style_score": 0.875, "combined_score": 0.4464, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 64.8, "text_chars": 204, "text_words": 35, "text_hash": "00327f86c247"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "content_id": "04e9a8ef-4573-45e9-8642-1fe2a72d637c", "creator_id": "c1_t1_writer", "guess": "unsure", "model_score": 0.0667, "style_score": 0.875, "combined_score": 0.4708, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 66.3, "text_chars": 204, "text_words": 37, "text_hash": "67225179839f"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "content_id": "bc0a02af-05c4-4e45-b722-ca72059c1c36", "creator_id": "c1_t1_writer", "guess": "unsure", "model_score": 0.0174, "style_score": 0.875, "combined_score": 0.4462, "label": "We can't tell whether this was written by a person or with AI help. Our checks gave mixed or middle-of-the-road results, which is common for writing by real people. This is not a finding that you used AI. If you'd like a person to look at it, you can appeal using your submission ID.", "status": "decided", "duration_ms": 58.0, "text_chars": 204, "text_words": 35, "text_hash": "cfd187c42b2e"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "c1_t1_writer", "event": "rejected", "status": "rejected", "reason": "rate_limited", "limit": "5 per 1 minute", "endpoint": "/submit", "duration_ms": 0.4, "text_chars": 201, "text_words": 34, "text_hash": "53f13cb951a6"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "c1_t1_empty", "event": "rejected", "status": "rejected", "reason": "text_too_short", "endpoint": "/submit", "duration_ms": 0.1, "text_chars": 0, "text_words": 0, "text_hash": "e3b0c44298fc"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "c1_t1_missing", "event": "rejected", "status": "rejected", "reason": "missing_field", "endpoint": "/submit", "duration_ms": 0.1, "input_type": "missing"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "c1_t1_null", "event": "rejected", "status": "rejected", "reason": "missing_field", "endpoint": "/submit", "duration_ms": 0.1, "input_type": "NoneType"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "c1_t1_number", "event": "rejected", "status": "rejected", "reason": "missing_field", "endpoint": "/submit", "duration_ms": 0.2, "input_type": "int"}
+{"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "endpoint": "/submit", "duration_ms": 0.1, "input_type": "not_a_json_object", "body_bytes": 22}
+{"timestamp": "2026-11-12T02:02:37+00:00", "content_id": "364b07e0-6d64-4f8e-8e50-f11c94aa267a", "creator_id": "c1_t1_writer", "event": "appeal", "status": "under_review", "reasoning": "I wrote this.", "duration_ms": 1.2}
+```
+
+Criterion 2 (`run_capstone.py::criterion_2`): for each of the 10
+submissions, its unique marker sentence, whether it (or any sentence of the
+text) was found anywhere in that trial's log entries, and what the log kept
+instead.
+
+```json
+{"marker": "Capstone marker sentence 2-1-1 mentions a plum lantern numbered 2101 beside the quiet harbour wall.", "leaked": false, "text_chars": 208, "text_words": 36, "text_hash": "db7a7e3b2ff0"}
+{"marker": "Capstone marker sentence 2-1-2 mentions a plum lantern numbered 2102 beside the quiet harbour wall.", "leaked": false, "text_chars": 205, "text_words": 35, "text_hash": "11fd85bbc69a"}
+{"marker": "Capstone marker sentence 2-1-3 mentions a plum lantern numbered 2103 beside the quiet harbour wall.", "leaked": false, "text_chars": 204, "text_words": 35, "text_hash": "0ef84fc44393"}
+{"marker": "Capstone marker sentence 2-1-4 mentions a plum lantern numbered 2104 beside the quiet harbour wall.", "leaked": false, "text_chars": 204, "text_words": 37, "text_hash": "3568c8a5a20a"}
+{"marker": "Capstone marker sentence 2-1-5 mentions a plum lantern numbered 2105 beside the quiet harbour wall.", "leaked": false, "text_chars": 204, "text_words": 35, "text_hash": "ce0224d89bbe"}
+{"marker": "Capstone marker sentence 2-1-6 mentions a plum lantern numbered 2106 beside the quiet harbour wall.", "leaked": false, "text_chars": 201, "text_words": 34, "text_hash": "36646d59e7ae"}
+{"marker": "Capstone marker sentence 2-1-7 mentions a plum lantern numbered 2107 beside the quiet harbour wall.", "leaked": false, "text_chars": 203, "text_words": 30, "text_hash": "362b9e17a7c7"}
+{"marker": "Capstone marker sentence 2-1-8 mentions a plum lantern numbered 2108 beside the quiet harbour wall.", "leaked": false, "text_chars": 205, "text_words": 28, "text_hash": "d6fdee4e9ed0"}
+{"marker": "Capstone marker sentence 2-1-9 mentions a plum lantern numbered 2109 beside the quiet harbour wall.", "leaked": false, "text_chars": 204, "text_words": 31, "text_hash": "2e577b4d8dc4"}
+{"marker": "Capstone marker sentence 2-1-10 mentions a plum lantern numbered 2110 beside the quiet harbour wall.", "leaked": false, "text_chars": 202, "text_words": 30, "text_hash": "247c06d50d8b"}
+```
+
+Criterion 3 (`run_capstone.py::criterion_3`): `duration_ms` read back from
+the log for the cold request and the 10 warm ones.
+
+```json
+{
+  "cold_ms": 5550.1,
+  "warm_ms": [
+    71.8,
+    59.2,
+    55.6,
+    71.0,
+    71.9,
+    56.1,
+    54.6,
+    55.1,
+    53.8,
+    54.9
+  ],
+  "warm_mean_ms": 60.4,
+  "per_100_submissions_s": 6.04
+}
+```
+
+Criterion 4 (`run_capstone.py::criterion_4`): each step of the fresh-clone
+setup, with how long it took and its last lines of output.
+
+```json
+{
+  "result": "setup succeeded",
+  "free_disk_gb_before": 12.3,
+  "source_changed": null,
+  "steps": [
+    {
+      "step": "git clone",
+      "ok": true,
+      "seconds": 0.6,
+      "tail": []
+    },
+    {
+      "step": "python3 -m venv .venv (/opt/anaconda3/bin/python3)",
+      "ok": true,
+      "seconds": 2.1,
+      "tail": []
+    },
+    {
+      "step": "pip install -r requirements.txt",
+      "ok": true,
+      "seconds": 32.7,
+      "tail": [
+        "[notice] A new release of pip is available: 24.0 -> 26.3",
+        "[notice] To update, run: /var/folders/yj/xy5g5b9d4q14gpqbq1vprd900000gn/T/capstone_clone_t1_0mabklje/repo/.venv/bin/python -m pip install --upgrade pip"
+      ]
+    },
+    {
+      "step": "python detector.py",
+      "ok": true,
+      "seconds": 17.0,
+      "tail": [
+        "model_signal   0.8864   (higher = more likely AI)",
+        "`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`."
+      ]
+    },
+    {
+      "step": "python test.py",
+      "ok": true,
+      "seconds": 3.4,
+      "tail": [
+        "",
+        "You're set. See you in class."
+      ]
+    },
+    {
+      "step": "python app.py, then POST /ping and POST /submit",
+      "ok": true,
+      "ping": true,
+      "submit": true,
+      "submit_guess": "unsure"
+    }
+  ]
+}
+```
+
+Criterion 5 (`run_capstone.py::criterion_5`): each deliberate failure, the
+response it got, and the log entry it left.
+
+```json
+{"case": "empty text", "status": 400, "error": "text_too_short", "log_entry": {"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "c5_t1_empty", "event": "rejected", "status": "rejected", "reason": "text_too_short", "endpoint": "/submit", "duration_ms": 0.2, "text_chars": 0, "text_words": 0, "text_hash": "e3b0c44298fc"}}
+{"case": "missing text", "status": 400, "error": "missing_field", "log_entry": {"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "c5_t1_missing", "event": "rejected", "status": "rejected", "reason": "missing_field", "endpoint": "/submit", "duration_ms": 0.1, "input_type": "missing"}}
+{"case": "malformed JSON", "status": 400, "error": "invalid_json", "log_entry": {"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "endpoint": "/submit", "duration_ms": 0.1, "input_type": "not_a_json_object", "body_bytes": 22}}
+{"case": "appeal, nonexistent id", "status": 404, "error": "unknown_content_id", "log_entry": {"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "unknown_content_id", "endpoint": "/appeal", "duration_ms": 1.1, "requested_content_id": "c5-t1-no-such-id", "reasoning_chars": 5}}
+{"case": "6th submit in a minute", "status": 429, "error": "rate_limited", "log_entry": {"timestamp": "2026-11-12T02:02:37+00:00", "creator_id": "c5_t1_writer", "event": "rejected", "status": "rejected", "reason": "rate_limited", "limit": "5 per 1 minute", "endpoint": "/submit", "duration_ms": 0.2, "text_chars": 201, "text_words": 34, "text_hash": "9d07cc3a9ea3"}}
+```
