@@ -992,3 +992,34 @@ accuse, are the ones it protects.
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+---
+
+## Capstone
+
+**The Shape**
+
+I'm extending **Provenance Guard** (units 7 and 8) with **shape A: deploy and
+instrument**. It runs locally (**Path B**), because the gpt2 model it loads
+is about 525 MB on disk and needs more memory than a 512 MB free host offers.
+What's new:
+
+- **Two new kinds of field on every audit log entry.** Decisions,
+  rejections (including rate-limit 429s) and appeals all get *how long the
+  request took* and *what came in*: the text's length and a short hash, never
+  the text itself, because the log is committed to a public repo.
+- **A measured cost per run,** in seconds of compute, taken from those log
+  durations rather than from a guess.
+- **A run path someone else can follow:** RUNNING.md with one start command
+  and the environment it needs, tested from a fresh clone.
+
+**Out of scope**
+
+- **Hosting it.** The model doesn't fit a free host's memory, and the course
+  treats Path B as equal.
+- **Changing how the system scores.** No changes to the signals, weights,
+  combining rule, thresholds or label text. This unit measures the system;
+  it doesn't change what it decides.
+- **Fixing the attacks that still get through** (EV05, PI02) and the
+  untraceable RQ10/RQ11 rejections. Those are unit 8's open problems, and
+  fixing them would be shape B or C, not A.
