@@ -1097,6 +1097,15 @@ server restarts daily: about 12 seconds of compute a day in total. The real
 cost is that the machine has to stay on with 525 MB of model in memory, not
 the compute itself.
 
+**After the improvement** The per-request cost
+didn't change: the warm means in the "after" run were 72.3, 61.3 and 86.8 ms,
+against 60.4, 70.3 and 64.9 before. The improvement moved where the one-time
+cost lands. Each start now takes 4.3–5.5 seconds and holds 235–388 MB while
+idle, up from 0.2–0.3 seconds and 43 MB, and the first writer no longer pays
+for the model load. With the "after" numbers, 100 people a day is 100 ×
+73.5 ms (the mean of the three "after" means) = 7.35 seconds of compute, plus
+one start of about 5 seconds: still roughly 12 seconds of compute a day.
+
 **Run Log — before**
 
 From `results/capstone_2026-11-11_2006_before.md`, produced by
@@ -1352,3 +1361,88 @@ one change, measured, rather than iterate further.
 trial 1, because criterion 4 would have cloned code I hadn't pushed yet. I
 removed its 43 entries from `logs/audit.jsonl`, committed and pushed the
 improvement, then ran all three "after" trials cleanly.
+
+**What's Still Broken**
+
+All five criteria were met, so the first thing still broken is a target:
+**criterion 3 was set too low.** As written in Verdicts and Diagnosis, I'd
+tighten it to "warm mean under 100 ms, and the first submission after
+start-up under 2,000 ms". The "before" run misses that, and the "after" run
+meets it. Beyond that, here's what's left:
+
+**The warm-up is only partial.** The first submission after a start still
+takes 0.5–1.6 seconds, not the ~65 ms of a warm one, because `warm_up()`
+loads the model without running it, and PyTorch's first real pass has a
+setup cost of its own.
+
+- **What I'd do:** score one short sample text during start-up, so that
+  first pass happens before any writer arrives.
+- **Why I stopped:** the milestone asks for one change, measured. I measured
+  it, saw it was partial, and chose to report it honestly rather than keep
+  iterating.
+
+**Appeal reasoning is still logged word for word in a public log.**
+Criterion 2 checks submissions and explicitly leaves appeals out. But a
+writer's appeal is their own words, and it lands in `logs/audit.jsonl`,
+which is committed to a public repo.
+
+- **What I'd do:** keep only the reasoning's length and hash in the public
+  log, and store the text itself somewhere that isn't committed.
+- **Why I stopped:** a reviewer has to be able to read the reasoning, so
+  fixing it means a second store, not one changed line. That's a change to
+  the system's behaviour, and outside shape A's scope.
+
+**Some rejections can't be traced back to who sent them.** A request whose
+body isn't JSON, or has no `creator_id`, is logged as `creator_id:
+"unknown"`, the same gap unit 8 found with RQ10 and RQ11.
+
+- **What I'd do:** give every request an ID and return it in the response,
+  so a caller and the log can be matched up.
+- **Why I stopped:** the obvious fix, logging the IP address, would put
+  personal data in a public log, which goes against criterion 2's reason.
+
+**Criterion 4 depends on disk headroom.** It passed with 11–12 GB free, but
+only because I'd emptied the trash first. RUNNING.md asks for about 9 GB
+free *before* you start, while `test.py` checks for 9 GB *after* the virtual
+environment has used about 1 GB, so a machine that just meets the documented
+requirement can still fail.
+
+- **What I'd do:** make the two say the same thing, either by asking for
+  about 10 GB in RUNNING.md or by checking earlier.
+- **Why I stopped:** it's a documentation fix that came out of the results,
+  and I ran out of time to retest it.
+
+**What I'd do next if this were real**
+
+I'd move appeal reasoning out of the public log first. A slow first request
+is an inconvenience, but publishing a real writer's own words is harm, and
+it's the one gap my own criteria named and left open.
+
+**How I Used AI**
+
+**Moment 1: checking my criteria, not writing them**
+
+- *What I asked for:* I pasted my first five criteria into Claude and asked,
+  for each one, how it could be tested from the sentence alone, whether two
+  people would score it the same, and what would make it fail. I asked it not
+  to rewrite them.
+- *What came back:* three problems. Appeal log entries don't have input
+  fields, so "12/12 requests have input metadata" couldn't be scored the
+  same way twice. "Appropriate errors" was a judgment nobody could check.
+  And `test.py`'s disk check had already failed once, so "1 complete setup
+  succeeds" could be scored either way.
+- *What I changed:* I rewrote all five criteria myself: naming the exact
+  requests and fields, excluding appeals from the input check, and defining
+  success for the fresh clone step by step. 
+
+**Moment 2: the improvement didn't do what was predicted**
+
+- *What I asked for:* How does my improvement suggestion sounds.
+- *What came back:* load the model at start-up instead of on the first
+  request, with a prediction that the first submission would drop from about
+  5.5 seconds to about 65 ms, like a warm one.
+- *What I changed:* I had the start-up cost measured before and after, and
+  the prediction was wrong. The first submission dropped to 1.3–1.6 seconds,
+  not 65 ms, because PyTorch's first real pass through the model has its own
+  setup cost. I was offered a second change, scoring a sample at start-up,
+  and chose to keep the one change and report it as a partial fix.
